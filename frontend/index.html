@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>华南师范大学 - 图书馆座位预约系统</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:微软雅黑,-apple-system,BlinkMacSystemFont,sans-serif}
+        body{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:1.5rem 1rem;padding-top:env(safe-area-inset-top,1.5rem);background:url("scnu-bg.jpg") no-repeat center center fixed;background-size:cover;position:relative}
+        body::before{content:"";position:absolute;top:0;left:0;width:100%;height:100%;background-color:rgba(245,245,247,0.92);z-index:-1}
+        
+        /* 顶部用户栏 */
+        .user-header{width:100%;max-width:800px;display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;padding:0 0.5rem}
+        .user-info{font-size:0.9rem;color:#1d1d1f}
+        .user-btns{display:flex;gap:0.5rem}
+        .user-btn{padding:0.5rem 0.8rem;border:none;border-radius:8px;background:#34c759;color:white;cursor:pointer;font-size:0.8rem;transition:all 0.2s}
+        .user-btn:hover{background:#28a745}
+        .user-btn.quit{background:#ff3b30}
+        .user-btn.quit:hover{background:#e03022}
+
+        .page-container{width:100%;max-width:800px;display:flex;flex-direction:column;gap:1rem;align-items:center;position:relative;z-index:1}
+        .page-title{font-size:1.6rem;font-weight:600;color:#1d1d1f;letter-spacing:-0.5px;text-align:center}
+        
+        /* 筛选卡片 */
+        .select-card{width:100%;background:rgba(255,255,255,0.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-radius:22px;padding:1rem 1.2rem;box-shadow:0 4px 20px rgba(0,0,0,0.05);border:1px solid rgba(255,255,255,0.9);display:flex;flex-wrap:wrap;gap:0.8rem;justify-content:space-between;align-items:center}
+        .select-item{flex:1;min-width:120px}
+        .select-label{font-size:0.8rem;color:#86868b;margin-bottom:0.3rem}
+        .select-control{width:100%;background:transparent;border:none;outline:none;font-size:0.9rem;color:#1d1d1f;cursor:pointer;appearance:none;-webkit-appearance:none;background:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2386868b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right center;padding-right:1.2rem;border-bottom:1px solid rgba(0,0,0,0.05)}
+        .select-control option{background:#ffffff;color:#1d1d1f;padding:0.6rem;font-size:0.9rem}
+        
+        /* 模式切换 */
+        .mode-switch{display:flex;align-items:center;gap:0.5rem;margin:0.5rem 0}
+        .switch-btn{padding:0.4rem 0.8rem;border:none;border-radius:8px;background:#e5e5e7;color:#1d1d1f;cursor:pointer;font-size:0.8rem}
+        .switch-btn.active{background:#34c759;color:white}
+        
+        /* 提示框：简化文字，仅保留状态说明 */
+        .seat-tip{font-size:0.8rem;color:#86868b;text-align:center;line-height:1.5;background:rgba(255,255,255,0.7);padding:0.5rem 1rem;border-radius:12px;backdrop-filter:blur(8px);width:100%;margin-bottom:0.5rem}
+        .btn-query{padding:0.6rem 1.2rem;border:none;border-radius:12px;background:#34c759;color:white;cursor:pointer;font-size:0.9rem;transition:all 0.2s ease;margin:0.5rem 0;width:100%;max-width:300px}
+        .btn-query:hover{background:#28a745;transform:scale(1.05)}
+        
+        /* 座位网格：适配更多座位数量 */
+        .seat-grid{display:flex;flex-wrap:wrap;gap:0.6rem;justify-content:center;width:100%;max-height:60vh;overflow-y:auto;padding:0.5rem}
+        .seat-item{width:3.5rem;height:3.5rem;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:0.8rem;font-weight:500;color:#1d1d1f;background:rgba(255,255,255,0.8);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 2px 8px rgba(0,0,0,0.04);transition:all 0.2s ease;cursor:pointer;gap:0.1rem}
+        /* 状态样式简化 */
+        .seat-item.empty{background:rgba(52,199,89,0.9);color:#ffffff;border:1px solid rgba(52,199,89,0.9)}
+        .seat-item.booked{background:rgba(255,59,48,0.9);color:#ffffff;border:1px solid rgba(255,59,48,0.9)}
+        .seat-item.my-booked{background:rgba(0,122,255,0.9);color:#ffffff;border:1px solid rgba(0,122,255,0.9)}
+        .seat-type{font-size:0.6rem;opacity:0.9}
+        .seat-number{font-size:0.7rem;font-weight:600}
+        
+        /* 简洁模式 */
+        .simple-mode .seat-type{display:none}
+        .simple-mode .seat-number{font-size:0.9rem}
+        .simple-mode .seat-item{width:3rem;height:3rem}
+        
+        /* 弹窗 */
+        .modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;justify-content:center;align-items:center;z-index:999}
+        .modal-box{background:white;padding:2rem;border-radius:20px;width:90%;max-width:320px;position:relative;box-shadow:0 8px 32px rgba(0,0,0,0.15)}
+        .modal-close{position:absolute;top:0.8rem;right:0.8rem;width:24px;height:24px;text-align:center;line-height:24px;font-size:1.2rem;color:#86868b;cursor:pointer;border-radius:50%;background:#f5f5f7}
+        .modal-close:hover{background:#e5e5e7;color:#1d1d1f}
+        .modal-box h3{margin-bottom:1.2rem;text-align:center;font-size:1.2rem;color:#1d1d1f}
+        .modal-input{width:100%;padding:0.8rem;margin:0.6rem 0;border:1px solid #ddd;border-radius:8px;font-size:0.9rem}
+        .modal-btn{width:100%;padding:0.8rem;background:#34c759;color:white;border:none;border-radius:8px;margin-top:1rem;font-size:0.9rem;cursor:pointer}
+        .modal-btn:hover{background:#28a745}
+        
+        /* 适配手机 */
+        @media (max-width:600px){
+            .select-card{flex-direction:column;align-items:stretch}
+            .select-item{min-width:100%}
+            .page-title{font-size:1.4rem}
+            .seat-item{width:3rem;height:3rem;font-size:0.7rem}
+            .seat-type{font-size:0.5rem}
+            .seat-grid{gap:0.4rem}
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部用户栏 -->
+    <div class="user-header">
+        <div class="user-info" id="userInfo">未登录</div>
+        <div class="user-btns">
+            <button class="user-btn" id="loginBtn" onclick="showModal('login')">登录</button>
+            <button class="user-btn" id="regBtn" onclick="showModal('register')">注册</button>
+            <button class="user-btn quit" id="quitBtn" onclick="logout()" style="display:none">退出登录</button>
+        </div>
+    </div>
+
+    <div class="page-container">
+        <h1 class="page-title">华南师范大学 - 图书馆座位预约系统</h1>
+        
+        <!-- 筛选条件：自动刷新 -->
+        <div class="select-card">
+            <div class="select-item">
+                <div class="select-label">选择楼层</div>
+                <select id="floorSelector" class="select-control" onchange="autoLoadSeats()">
+                    <option value="floor1">一楼自习区</option>
+                    <option value="floor2">二楼自习区</option>
+                    <option value="floor3">三楼自习区</option>
+                </select>
+            </div>
+            <div class="select-item">
+                <div class="select-label">选择日期</div>
+                <input type="date" id="dateSelector" class="select-control" onchange="autoLoadSeats()">
+            </div>
+            <div class="select-item">
+                <div class="select-label">选择时段</div>
+                <select id="timeSelector" class="select-control" onchange="autoLoadSeats()">
+                    <option value="morning">上午（8:00-12:00）</option>
+                    <option value="afternoon">下午（14:00-18:00）</option>
+                    <option value="evening">晚上（19:00-22:00）</option>
+                </select>
+            </div>
+        </div>
+        
+        <!-- 模式切换 -->
+        <div class="mode-switch">
+            <button class="switch-btn active" id="detailMode" onclick="switchMode('detail')">详细模式</button>
+            <button class="switch-btn" id="simpleMode" onclick="switchMode('simple')">简洁模式</button>
+        </div>
+        
+        <!-- 提示框：简化为仅状态说明 -->
+        <div class="seat-tip" id="seatTip">
+            绿色=可约 | 红色=约满 | 蓝色=已约
+        </div>
+        
+        <button class="btn-query" id="queryBtn" onclick="loadSeats()">查询座位</button>
+        
+        <div class="seat-grid" id="seatGrid"></div>
+    </div>
+
+    <!-- 登录弹窗 -->
+    <div class="modal" id="loginModal" onclick="hideModalOnOutside(event)">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <span class="modal-close" onclick="hideModal()">×</span>
+            <h3>用户登录</h3>
+            <input type="text" class="modal-input" id="loginUser" placeholder="请输入注册的账号">
+            <input type="password" class="modal-input" id="loginPwd" placeholder="请输入注册的密码">
+            <button class="modal-btn" onclick="login()">登录</button>
+        </div>
+    </div>
+
+    <!-- 注册弹窗 -->
+    <div class="modal" id="registerModal" onclick="hideModalOnOutside(event)">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <span class="modal-close" onclick="hideModal()">×</span>
+            <h3>用户注册</h3>
+            <input type="text" class="modal-input" id="regUser" placeholder="设置账号（如：scnu123）">
+            <input type="password" class="modal-input" id="regPwd" placeholder="设置密码（不少于6位）">
+            <button class="modal-btn" onclick="register()">注册</button>
+        </div>
+    </div>
+
+    <script>
+        // 后端接口地址（本地）
+        const API_URL = "http://localhost:3000/api";
+        let isLogin = false;
+        let currentMode = "detail";
+        const seatGrid = document.getElementById("seatGrid");
+
+        // 初始化日期 + 禁用过去日期
+        const today = new Date();
+        const formattedDate = today.toISOString().split('T')[0];
+        const dateSelector = document.getElementById("dateSelector");
+        dateSelector.min = formattedDate;
+        dateSelector.value = formattedDate;
+
+        // 时段英文转中文
+        function formatTimeText(timeValue) {
+            const timeMap = {
+                morning: '上午',
+                afternoon: '下午',
+                evening: '晚上'
+            };
+            return timeMap[timeValue] || timeValue;
+        }
+
+        // 自动刷新函数
+        function autoLoadSeats() {
+            if (isLogin) {
+                loadSeats();
+            }
+        }
+
+        // 弹窗控制
+        function showModal(type) {
+            document.getElementById(type === "login" ? "loginModal" : "registerModal").style.display = "flex";
+        }
+        function hideModal() {
+            document.getElementById("loginModal").style.display = "none";
+            document.getElementById("registerModal").style.display = "none";
+        }
+        function hideModalOnOutside(event) {
+            if (event.target === event.currentTarget) hideModal();
+        }
+
+        // 注册
+        function register() {
+            const regUser = document.getElementById("regUser").value.trim();
+            const regPwd = document.getElementById("regPwd").value.trim();
+            if (!regUser || !regPwd) {
+                alert("账号密码不能为空！");
+                return;
+            }
+            if (regPwd.length < 6) {
+                alert("密码请不少于6位！");
+                return;
+            }
+
+            fetch(`${API_URL}/register`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username: regUser, password: regPwd })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.code === 200) {
+                    alert("注册成功！请登录");
+                    hideModal();
+                    document.getElementById("loginUser").value = regUser;
+                } else {
+                    alert(data.msg);
+                }
+            })
+            .catch(err => alert("网络错误！请检查后端是否启动"));
+        }
+
+        // 登录
+        function login() {
+            const loginUser = document.getElementById("loginUser").value.trim();
+            const loginPwd = document.getElementById("loginPwd").value.trim();
+            if (!loginUser || !loginPwd) {
+                alert("账号密码不能为空！");
+                return;
+            }
+
+            fetch(`${API_URL}/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username: loginUser, password: loginPwd })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.code === 200) {
+                    localStorage.setItem("token", data.data.token);
+                    localStorage.setItem("username", data.data.username);
+                    isLogin = true;
+                    document.getElementById("userInfo").innerText = `欢迎，${data.data.username}`;
+                    document.getElementById("loginBtn").style.display = "none";
+                    document.getElementById("regBtn").style.display = "none";
+                    document.getElementById("quitBtn").style.display = "inline-block";
+                    alert("登录成功！");
+                    hideModal();
+                    loadSeats();
+                } else {
+                    alert(data.msg);
+                }
+            })
+            .catch(err => alert("网络错误！请检查后端是否启动"));
+        }
+
+        // 退出登录
+        function logout() {
+            localStorage.removeItem("token");
+            localStorage.removeItem("username");
+            isLogin = false;
+            document.getElementById("userInfo").innerText = "未登录";
+            document.getElementById("loginBtn").style.display = "inline-block";
+            document.getElementById("regBtn").style.display = "inline-block";
+            document.getElementById("quitBtn").style.display = "none";
+            seatGrid.innerHTML = "";
+            alert("已退出登录！");
+        }
+
+        // 模式切换
+        function switchMode(mode) {
+            currentMode = mode;
+            if (mode === "detail") {
+                document.getElementById("detailMode").classList.add("active");
+                document.getElementById("simpleMode").classList.remove("active");
+                seatGrid.classList.remove("simple-mode");
+            } else {
+                document.getElementById("simpleMode").classList.add("active");
+                document.getElementById("detailMode").classList.remove("active");
+                seatGrid.classList.add("simple-mode");
+            }
+            if (isLogin) loadSeats();
+        }
+
+        // 取消预约函数
+        function cancelReserve(seatId, date, time) {
+            const timeText = formatTimeText(time);
+            if (!confirm(`确认取消【${date} ${timeText}】时段的座位预约吗？`)) {
+                return;
+            }
+
+            fetch(`${API_URL}/cancel-reserve`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${localStorage.getItem("token")}`
+                },
+                body: JSON.stringify({ seatId, date, time })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(data.msg);
+                if (data.code === 200) loadSeats(); // 取消成功刷新座位
+            })
+            .catch(err => alert("网络错误！请检查后端是否启动"));
+        }
+
+        // 加载座位
+        function loadSeats() {
+            if (!localStorage.getItem("token")) {
+                alert("请先登录！");
+                showModal("login");
+                return;
+            }
+
+            const floor = document.getElementById("floorSelector").value.replace("floor", "");
+            const date = document.getElementById("dateSelector").value || formattedDate;
+            const time = document.getElementById("timeSelector").value;
+            const timeText = formatTimeText(time);
+
+            fetch(`${API_URL}/seats?floor=${floor}&date=${date}&time=${time}`, {
+                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.code === 200) {
+                    seatGrid.innerHTML = "";
+                    // 仅保留楼层名称，简化提示
+                    document.getElementById("seatTip").innerText = `${data.data.floor_name} | 绿色=可约 | 红色=约满 | 蓝色=已约`;
+                    
+                    data.data.seats.forEach(seat => {
+                        let statusClass = "";
+                        if (seat.status === 0) {
+                            statusClass = "empty"; // 绿色=可约
+                        } else if (seat.status === 1) {
+                            statusClass = "booked"; // 红色=约满
+                        } else if (seat.status === 2) {
+                            statusClass = "my-booked"; // 蓝色=已约
+                        }
+
+                        const seatEl = document.createElement("div");
+                        seatEl.className = `seat-item ${statusClass}`;
+                        seatEl.dataset.seatId = seat.id;
+
+                        const typeEl = document.createElement("div");
+                        typeEl.className = "seat-type";
+                        typeEl.innerText = seat.seat_type; // 仅台灯/圆桌/插头显示对应类型，其余显示普通桌
+
+                        const numEl = document.createElement("div");
+                        numEl.className = "seat-number";
+                        numEl.innerText = `座${seat.seat_num}`;
+
+                        seatEl.appendChild(typeEl);
+                        seatEl.appendChild(numEl);
+                        seatGrid.appendChild(seatEl);
+
+                        // 点击逻辑：区分不同状态
+                        seatEl.addEventListener("click", () => {
+                            if (seat.status === 1) {
+                                alert("该座位已约满！");
+                                return;
+                            }
+                            // 自己的蓝色座位：触发取消预约
+                            if (seat.status === 2) {
+                                cancelReserve(seat.id, date, time);
+                                return;
+                            }
+                            // 绿色可约座位：触发预约
+                            if (confirm(`确认预约【${data.data.floor_name} - 座${seat.seat_num}】${date} ${timeText}时段吗？`)) {
+                                reserveSeat(seat.id, date, time);
+                            }
+                        });
+                    });
+                } else if (data.code === 401) {
+                    alert("登录过期，请重新登录！");
+                    logout();
+                } else {
+                    alert(data.msg);
+                }
+            })
+            .catch(err => alert("网络错误！请检查后端是否启动"));
+        }
+
+        // 预约座位
+        function reserveSeat(seatId, date, time) {
+            fetch(`${API_URL}/reserve`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${localStorage.getItem("token")}`
+                },
+                body: JSON.stringify({ seatId, date, time })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(data.msg);
+                if (data.code === 200) loadSeats();
+            })
+            .catch(err => alert("网络错误！请检查后端是否启动"));
+        }
+    </script>
+</body>
+</html>
