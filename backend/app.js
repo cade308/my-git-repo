@@ -15,18 +15,88 @@ const JWT_SECRET = 'scnu_library_2026_secret_key';
 const JWT_EXPIRES_IN = '2h';
 
 // 中间件配置
-app.use(cors()); // 解决跨域
+app.use(cors()); // 解决跨域（允许所有前端域名访问）
 app.use(express.json()); // 解析JSON请求体
+app.use(express.urlencoded({ extended: true })); // 解析表单格式请求
 
-// 数据库配置（修改为你的MySQL密码）
-const db = mysql.createPool({
+// 数据库配置（你的root密码已设为123456）
+const dbConfig = {
   host: 'localhost',
   user: 'root',
-  password: '123456', // 替换为你的MySQL密码
+  password: '123456', // 你的MySQL root密码
   database: 'scnu_library', // 数据库名
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  multipleStatements: true // 允许执行多条SQL语句（方便初始化数据库）
+};
+
+// 创建数据库连接池并测试连接
+const db = mysql.createPool(dbConfig);
+
+// 测试数据库连接 + 自动创建数据库（如果不存在）
+db.getConnection((err, connection) => {
+  if (err) {
+    if (err.code === 'ER_BAD_DB_ERROR') {
+      // 数据库不存在，先创建数据库
+      const tempDb = mysql.createConnection({
+        host: dbConfig.host,
+        user: dbConfig.user,
+        password: dbConfig.password,
+        multipleStatements: true
+      });
+
+      tempDb.query(`
+        CREATE DATABASE IF NOT EXISTS scnu_library DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+        USE scnu_library;
+        -- 创建用户表
+        CREATE TABLE IF NOT EXISTS users (
+          id INT AUTO_INCREMENT PRIMARY KEY COMMENT '用户ID',
+          username VARCHAR(50) NOT NULL UNIQUE COMMENT '用户名',
+          password VARCHAR(100) NOT NULL COMMENT '加密密码',
+          create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'
+        ) COMMENT '用户信息表';
+        -- 创建座位预约表
+        CREATE TABLE IF NOT EXISTS seats (
+          id INT AUTO_INCREMENT PRIMARY KEY COMMENT '预约记录ID',
+          floor INT NOT NULL COMMENT '楼层',
+          seat_num INT NOT NULL COMMENT '座位号',
+          reserve_user VARCHAR(50) NOT NULL COMMENT '预约用户',
+          reserve_date VARCHAR(20) NOT NULL COMMENT '预约日期',
+          reserve_time VARCHAR(20) NOT NULL COMMENT '预约时段',
+          UNIQUE KEY unique_seat_reserve (floor, seat_num, reserve_date, reserve_time)
+        ) COMMENT '座位预约表';
+      `, (createErr) => {
+        if (createErr) {
+          console.error('❌ 数据库初始化失败：', createErr.message);
+          process.exit(1); // 退出进程
+        }
+        console.log('✅ 数据库scnu_library及表已自动创建（若不存在）');
+        tempDb.end(); // 关闭临时连接
+
+        // 重新连接创建好的数据库
+        db.getConnection((reConnErr, reConn) => {
+          if (reConnErr) {
+            console.error('❌ 数据库重新连接失败：', reConnErr.message);
+            process.exit(1);
+          }
+          console.log('✅ 数据库连接成功！');
+          reConn.release(); // 释放连接
+        });
+      });
+    } else {
+      // 其他连接错误（如密码错误、MySQL未启动）
+      console.error('❌ 数据库连接失败：', err.message);
+      console.log('💡 排查建议：');
+      console.log('   1. 确认MySQL服务已启动');
+      console.log('   2. 确认root密码是123456（或修改代码中的password字段）');
+      console.log('   3. 确认MySQL允许root本地登录');
+      process.exit(1); // 退出进程
+    }
+  } else {
+    console.log('✅ 数据库连接成功！');
+    connection.release(); // 释放连接
+  }
 });
 
 // ========== 核心中间件：验证Token ==========
@@ -34,7 +104,7 @@ const authMiddleware = (req, res, next) => {
   // 从请求头获取token
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.json({ code: 401, msg: '未登录或token无效' });
+    return res.json({ code: 401, msg: '未登录或token无效，请先登录' });
   }
   const token = authHeader.split(' ')[1];
   try {
@@ -43,7 +113,7 @@ const authMiddleware = (req, res, next) => {
     req.user = decoded; // 将用户信息挂载到req上
     next();
   } catch (err) {
-    return res.json({ code: 401, msg: 'token过期，请重新登录' });
+    return res.json({ code: 401, msg: 'token过期或无效，请重新登录' });
   }
 };
 
@@ -75,7 +145,7 @@ app.post('/api/register', (req, res) => {
       if (err) {
         return res.json({ code: 500, msg: '注册失败：' + err.message });
       }
-      res.json({ code: 200, msg: '注册成功' });
+      res.json({ code: 200, msg: '注册成功，请登录' });
     });
   });
 });
@@ -94,13 +164,13 @@ app.post('/api/login', (req, res) => {
       return res.json({ code: 500, msg: '数据库查询失败：' + err.message });
     }
     if (results.length === 0) {
-      return res.json({ code: 400, msg: '账号不存在' });
+      return res.json({ code: 400, msg: '账号不存在，请先注册' });
     }
     // 验证密码
     const user = results[0];
     const isPwdValid = bcrypt.compareSync(password, user.password);
     if (!isPwdValid) {
-      return res.json({ code: 400, msg: '密码错误' });
+      return res.json({ code: 400, msg: '密码错误，请重新输入' });
     }
     // 生成JWT token
     const token = jwt.sign(
@@ -152,6 +222,11 @@ app.get('/api/seats', authMiddleware, (req, res) => {
       ...Array(40).fill('普通桌')
     ]
   };
+
+  // 校验楼层是否合法
+  if (!seatConfig[floor]) {
+    return res.json({ code: 400, msg: '楼层不存在（仅支持1/2/3楼）' });
+  }
 
   // 查询该时段的座位预约情况
   const sql = `
@@ -207,8 +282,8 @@ app.post('/api/reserve', authMiddleware, (req, res) => {
   const [floor, seatNum] = seatId.split('_');
 
   // 校验参数
-  if (!seatId || !date || !time) {
-    return res.json({ code: 400, msg: '参数不全' });
+  if (!seatId || !date || !time || !floor || !seatNum) {
+    return res.json({ code: 400, msg: '参数不全，请选择有效座位' });
   }
 
   // 第一步：查询该用户当前时段已预约的座位数（最多2个）
@@ -263,8 +338,8 @@ app.post('/api/cancel-reserve', authMiddleware, (req, res) => {
   const [floor, seatNum] = seatId.split('_');
 
   // 校验参数
-  if (!seatId || !date || !time) {
-    return res.json({ code: 400, msg: '参数不全' });
+  if (!seatId || !date || !time || !floor || !seatNum) {
+    return res.json({ code: 400, msg: '参数不全，请选择有效座位' });
   }
 
   // 检查该座位是否是当前用户预约的
@@ -296,6 +371,14 @@ app.post('/api/cancel-reserve', authMiddleware, (req, res) => {
 
 // 启动服务器
 app.listen(PORT, () => {
-  console.log(`服务器已启动，运行在 http://localhost:${PORT}`);
-  console.log('所有接口已就绪：/api/register /api/login /api/seats /api/reserve /api/cancel-reserve');
+  console.log('=====================================');
+  console.log(`✅ 服务器已启动，运行在 http://localhost:${PORT}`);
+  console.log('📜 可用接口：');
+  console.log('   - 注册：POST /api/register');
+  console.log('   - 登录：POST /api/login');
+  console.log('   - 获取座位：GET /api/seats（需登录）');
+  console.log('   - 预约座位：POST /api/reserve（需登录）');
+  console.log('   - 取消预约：POST /api/cancel-reserve（需登录）');
+  console.log('💡 注意：确保MySQL服务已启动，密码为123456');
+  console.log('=====================================');
 });

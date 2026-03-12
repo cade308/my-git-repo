@@ -1,0 +1,8 @@
+# 后端依赖目录
+backend/node_modules/
+# npm锁文件（可选，也可保留）
+backend/package-lock.json
+# 环境变量文件（后续若有配置密码可加）
+.env
+# 日志文件
+*.log
